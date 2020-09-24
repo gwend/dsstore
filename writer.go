@@ -303,7 +303,7 @@ func (s *Store) writeHeader(b *bytes.Buffer, offsetRoot, size uint32) error {
 	return nil
 }
 
-// WriteStore write .DS_Store
+// WriteStore writes .DS_Store to io.Writer
 func (s *Store) Write(w io.Writer) error {
 	// prepare data block
 	blockData := new(bytes.Buffer)
@@ -375,7 +375,7 @@ func (s *Store) Write(w io.Writer) error {
 	return err
 }
 
-// WriteFile is reads .DS_Store
+// WriteFile writes .DS_Store to the file
 func (s *Store) WriteFile(filename string, perm os.FileMode) error {
 	buffer := new(bytes.Buffer)
 	if err := s.Write(buffer); err != nil {

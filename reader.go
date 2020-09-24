@@ -269,7 +269,7 @@ func (s *Store) readParseRoot(fileData []byte, offset, size uint32) error {
 	return s.readParseDSDB(fileData, offsets, topics)
 }
 
-// Read is reads .DS_Store
+// Read reads .DS_Store from io.Reader
 func (s *Store) Read(r io.Reader) error {
 	// clear
 	s.HeaderExtra = nil
@@ -325,7 +325,7 @@ func (s *Store) Read(r io.Reader) error {
 	return s.readParseRoot(fileData, headerOffset1, headerSize)
 }
 
-// ReadFile is reads .DS_Store
+// ReadFile reads .DS_Store from the file
 func (s *Store) ReadFile(filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
