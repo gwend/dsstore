@@ -142,26 +142,3 @@ func TestMassive(t *testing.T) {
 		testMassiveFile(t, filepath.Join(testdata, f.Name()))
 	}
 }
-
-func TestWrite2(t *testing.T) {
-	// data, err := ioutil.ReadFile(filepath.Join(".", "testdata", "test.DS_Store"))
-	// if err != nil {
-	// 	t.Errorf("%s", err.Error())
-	// }
-	// dataBuffer := bytes.NewBuffer(data)
-	// var s1, s2 Store
-	// err = s1.Read(dataBuffer)
-	// if err != nil {
-	// 	t.Errorf("%s", err.Error())
-	// }
-	// dataBufferNew := new(bytes.Buffer)
-	// err = s1.Write(dataBufferNew)
-	// if err != nil {
-	// 	t.Errorf("%s", err.Error())
-	// }
-	// dataBuffer = bytes.NewBuffer(dataBufferNew.Bytes())
-	// err = s2.Read(dataBuffer)
-	// if err != nil {
-	// 	t.Errorf("%s", err.Error())
-	// }
-}
