@@ -44,7 +44,7 @@ func writeBlockMapAlloc(blockList []dsblock, size uint32, capacity uint32) (uint
 	if capacity < size {
 		capacity = size
 	}
-	// calc size powered by 2
+	// calculate size needed size that powered by 2
 	var powCapacity uint32 = 0
 	var powSize uint32 = 0
 	var powIndex uint32 = 32
@@ -62,7 +62,7 @@ func writeBlockMapAlloc(blockList []dsblock, size uint32, capacity uint32) (uint
 	}
 	// sort map
 	writeBlockMapSort(blockList)
-	// find block in usage blocks
+	// find block in partly used blocks
 	for i, block := range blockList {
 		if block.size != block.offset && block.size == powCapacity {
 			blockList = append(blockList[:i], blockList[i+1:]...)
@@ -72,7 +72,7 @@ func writeBlockMapAlloc(blockList []dsblock, size uint32, capacity uint32) (uint
 			return block.offset | powIndex, blockList
 		}
 	}
-	// find block
+	// find block in fully cleared blocks
 	for i, block := range blockList {
 		if block.size >= powCapacity {
 			blockList = append(blockList[:i], blockList[i+1:]...)
