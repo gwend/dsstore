@@ -207,15 +207,26 @@ func writeTopicDBDS(b *bytes.Buffer, index uint32) error {
 }
 
 func writeFreeBlocks(b *bytes.Buffer, freeBlocks []dsblock) error {
-	m := make(map[uint32][]uint32)
-	//
+	// sort blocks by size
 	writeBlockMapSort(freeBlocks)
-	//
+	// it is magic
 	for i := 0; i < 32; i++ {
+		// current block size (iterating block sizes 1, 2, 4, 8, 16, ..., 1024, 2048, 4096, ...)
 		var blockSize uint32 = uint32(1) << i
 		var blockCount uint32 = 0
 		for j := 0; j < len(freeBlocks); j++ {
 			power := (freeBlocks[j].size & (freeBlocks[j].size - 1)) == 0
+			// we need take blocks with size == blockSize
+			// but also we take all blocks bigger than blockSize that are not round by 2 power
+			//
+			// For example we have the following blocks allocation (globally 2 blocks - 2048-4096, 4096-8092):
+			// |             |####1024####                 |
+			// 2048          4096                          8092
+			//
+			// Used space is 4096-5120. Free space are 2048-4095 and 5121-8091 (sub part of block 4096-8092).
+			// Free blocks for blockSize == 2048 are 2048-4096 and 5120-8092 (because it can't be assinged to blocks with size >= 4096)
+			// Free blocks for blockSize == 4096 are none
+			// here we just calculate count of free blocks with needed size
 			if freeBlocks[j].size == blockSize || (freeBlocks[j].size > blockSize && !power) {
 				blockCount++
 				continue
@@ -228,12 +239,10 @@ func writeFreeBlocks(b *bytes.Buffer, freeBlocks []dsblock) error {
 			return err
 		}
 		if blockCount > 0 {
-			m[uint32(i)] = make([]uint32, 0)
-
+			// writing blocks offsets
 			for j := 0; j < len(freeBlocks); j++ {
 				power := (freeBlocks[j].size & (freeBlocks[j].size - 1)) == 0
 				if freeBlocks[j].size == blockSize || (freeBlocks[j].size > blockSize && !power) {
-					m[uint32(i)] = append(m[uint32(i)], freeBlocks[j].offset)
 					if err := binary.Write(b, binary.BigEndian, uint32(freeBlocks[j].offset)); err != nil {
 						return err
 					}
@@ -245,7 +254,6 @@ func writeFreeBlocks(b *bytes.Buffer, freeBlocks []dsblock) error {
 			}
 		}
 	}
-
 	return nil
 }
 
