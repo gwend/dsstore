@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
@@ -322,4 +323,14 @@ func (s *Store) Read(r io.Reader) error {
 	}
 	// parse root block
 	return s.readParseRoot(fileData, headerOffset1, headerSize)
+}
+
+// ReadFile is reads .DS_Store
+func (s *Store) ReadFile(filename string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return s.Read(f)
 }

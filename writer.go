@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/ioutil"
+	"os"
 	"sort"
 
 	"golang.org/x/text/encoding/unicode"
@@ -371,4 +373,13 @@ func (s *Store) Write(w io.Writer) error {
 	// write it
 	_, err := w.Write(fileData)
 	return err
+}
+
+// WriteFile is reads .DS_Store
+func (s *Store) WriteFile(filename string, perm os.FileMode) error {
+	buffer := new(bytes.Buffer)
+	if err := s.Write(buffer); err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filename, buffer.Bytes(), perm)
 }
