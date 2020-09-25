@@ -5,7 +5,7 @@ type Record struct {
 	FileName string // file name
 	Extra    uint32 // extra (unknown data)
 	Type     string // type
-	DataLen  uint32 // explicit data size
+	DataLen  uint32 // explicit data size in bytes
 	Data     []byte // raw data
 }
 
