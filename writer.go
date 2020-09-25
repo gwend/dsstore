@@ -13,33 +13,33 @@ import (
 	"golang.org/x/text/transform"
 )
 
-type dsblock struct {
+type freeBlock struct {
 	offset uint32
 	size   uint32
 }
 
-func writeBlockMapCreate() []dsblock {
-	blockList := make([]dsblock, 0)
+func (s *Store) writeFreeMapCreate() []freeBlock {
+	freeBlocks := make([]freeBlock, 0)
 	for i := 5; i < 31; i++ {
 		pow := uint32(1 << i)
-		blockList = append(blockList, dsblock{pow, pow})
+		freeBlocks = append(freeBlocks, freeBlock{pow, pow})
 	}
-	return blockList
+	return freeBlocks
 }
 
-func writeBlockMapSort(blockList []dsblock) {
-	sort.SliceStable(blockList, func(i, j int) bool {
-		if blockList[i].size < blockList[j].size {
+func (s *Store) writeFreeMapSort(freeBlocks []freeBlock) {
+	sort.SliceStable(freeBlocks, func(i, j int) bool {
+		if freeBlocks[i].size < freeBlocks[j].size {
 			return true
 		}
-		if blockList[i].size < blockList[j].size {
-			return blockList[i].offset < blockList[j].offset
+		if freeBlocks[i].size < freeBlocks[j].size {
+			return freeBlocks[i].offset < freeBlocks[j].offset
 		}
 		return false
 	})
 }
 
-func writeBlockMapAlloc(blockList []dsblock, size uint32, capacity uint32) (uint32, []dsblock) {
+func (s *Store) writeFreeMapAlloc(freeBlocks []freeBlock, size uint32, capacity uint32) (uint32, []freeBlock) {
 	// check capacity
 	if capacity < size {
 		capacity = size
@@ -61,31 +61,31 @@ func writeBlockMapAlloc(blockList []dsblock, size uint32, capacity uint32) (uint
 		}
 	}
 	// sort map
-	writeBlockMapSort(blockList)
+	s.writeFreeMapSort(freeBlocks)
 	// find block in partly used blocks
-	for i, block := range blockList {
+	for i, block := range freeBlocks {
 		if block.size != block.offset && block.size == powCapacity {
-			blockList = append(blockList[:i], blockList[i+1:]...)
+			freeBlocks = append(freeBlocks[:i], freeBlocks[i+1:]...)
 			if block.size > powSize {
-				blockList = append(blockList, dsblock{block.offset + powSize, block.size - powSize})
+				freeBlocks = append(freeBlocks, freeBlock{block.offset + powSize, block.size - powSize})
 			}
-			return block.offset | powIndex, blockList
+			return block.offset | powIndex, freeBlocks
 		}
 	}
 	// find block in fully cleared blocks
-	for i, block := range blockList {
+	for i, block := range freeBlocks {
 		if block.size >= powCapacity {
-			blockList = append(blockList[:i], blockList[i+1:]...)
+			freeBlocks = append(freeBlocks[:i], freeBlocks[i+1:]...)
 			if block.size > powSize {
-				blockList = append(blockList, dsblock{block.offset + powSize, block.size - powSize})
+				freeBlocks = append(freeBlocks, freeBlock{block.offset + powSize, block.size - powSize})
 			}
-			return block.offset | powIndex, blockList
+			return block.offset | powIndex, freeBlocks
 		}
 	}
-	return 0, blockList
+	return 0, freeBlocks
 }
 
-func writeAlignBlock(b *bytes.Buffer, minSize uint32) error {
+func (s *Store) writeAlignBlock(b *bytes.Buffer, minSize uint32) error {
 	var len uint32 = uint32(b.Len())
 	for i := 0; i < 32; i++ {
 		var aligned uint32 = 1 << i
@@ -100,7 +100,7 @@ func writeAlignBlock(b *bytes.Buffer, minSize uint32) error {
 	return nil
 }
 
-func writeBlockData(b *bytes.Buffer, records []Record) error {
+func (s *Store) writeBlockData(b *bytes.Buffer, records []Record) error {
 	// nextBlock is always 0. Storing all records in the one block
 	if err := binary.Write(b, binary.BigEndian, uint32(0)); err != nil {
 		return err
@@ -146,19 +146,36 @@ func writeBlockData(b *bytes.Buffer, records []Record) error {
 	return nil
 }
 
-func writeBlockDSDB(b *bytes.Buffer, dsdbExtra []byte, index uint32) error {
+func (s *Store) writeBlockDSDB(b *bytes.Buffer, index uint32) error {
 	// write data block index
-	if err := binary.Write(b, binary.BigEndian, index); err != nil {
+	err := binary.Write(b, binary.BigEndian, index)
+	if err != nil {
 		return err
 	}
-	// dummy 16 bytes
-	if _, err := b.Write(dsdbExtra); err != nil {
+	// levels. always is 0
+	if err = binary.Write(b, binary.BigEndian, uint32(0)); err != nil {
+		return err
+	}
+	// records
+	if err = binary.Write(b, binary.BigEndian, uint32(len(s.Records))); err != nil {
+		return err
+	}
+	// nodes. always is 1 (storing all data in one data block)
+	if err = binary.Write(b, binary.BigEndian, uint32(1)); err != nil {
+		return err
+	}
+	// dummy 0x1000 value
+	if err = binary.Write(b, binary.BigEndian, uint32(0x1000)); err != nil {
+		return err
+	}
+	// other unknown data
+	if _, err := b.Write(s.DSDBExtra); err != nil {
 		return err
 	}
 	return nil
 }
 
-func writeOffsets(b *bytes.Buffer, offsetRoot, offsetDBDS, offsetData uint32) error {
+func (s *Store) writeOffsets(b *bytes.Buffer, offsetRoot, offsetDBDS, offsetData uint32) error {
 	// count of offset. always 3 blocks only
 	if err := binary.Write(b, binary.BigEndian, uint32(3)); err != nil {
 		return err
@@ -186,7 +203,7 @@ func writeOffsets(b *bytes.Buffer, offsetRoot, offsetDBDS, offsetData uint32) er
 	return nil
 }
 
-func writeTopicDBDS(b *bytes.Buffer, index uint32) error {
+func (s *Store) writeTopicDBDS(b *bytes.Buffer, index uint32) error {
 	// always one topic (DBDS)
 	if err := binary.Write(b, binary.BigEndian, uint32(1)); err != nil {
 		return err
@@ -206,9 +223,9 @@ func writeTopicDBDS(b *bytes.Buffer, index uint32) error {
 	return nil
 }
 
-func writeFreeBlocks(b *bytes.Buffer, freeBlocks []dsblock) error {
+func (s *Store) writeFreeBlocks(b *bytes.Buffer, freeBlocks []freeBlock) error {
 	// sort blocks by size
-	writeBlockMapSort(freeBlocks)
+	s.writeFreeMapSort(freeBlocks)
 	// it is magic
 	for i := 0; i < 32; i++ {
 		// current block size (iterating block sizes 1, 2, 4, 8, 16, ..., 1024, 2048, 4096, ...)
@@ -257,21 +274,21 @@ func writeFreeBlocks(b *bytes.Buffer, freeBlocks []dsblock) error {
 	return nil
 }
 
-func writeBlockRoot(b *bytes.Buffer, rootExtra []byte, offsetRoot, offsetDBDS, offsetData uint32, freeBlocks []dsblock) error {
+func (s *Store) writeBlockRoot(b *bytes.Buffer, offsetRoot, offsetDBDS, offsetData uint32, freeBlocks []freeBlock) error {
 	// offsets
-	if err := writeOffsets(b, offsetRoot, offsetDBDS, offsetData); err != nil {
+	if err := s.writeOffsets(b, offsetRoot, offsetDBDS, offsetData); err != nil {
 		return err
 	}
 	// topic. index is always 1
-	if err := writeTopicDBDS(b, 1); err != nil {
+	if err := s.writeTopicDBDS(b, 1); err != nil {
 		return err
 	}
 	// free blocks
-	if err := writeFreeBlocks(b, freeBlocks); err != nil {
+	if err := s.writeFreeBlocks(b, freeBlocks); err != nil {
 		return err
 	}
 	// write extra (unknown data)
-	if _, err := b.Write(rootExtra); err != nil {
+	if _, err := b.Write(s.RootExtra); err != nil {
 		return err
 	}
 	return nil
@@ -315,34 +332,34 @@ func (s *Store) writeHeader(b *bytes.Buffer, offsetRoot, size uint32) error {
 func (s *Store) Write(w io.Writer) error {
 	// prepare data block
 	blockData := new(bytes.Buffer)
-	if err := writeBlockData(blockData, s.Records); err != nil {
+	if err := s.writeBlockData(blockData, s.Records); err != nil {
 		return err
 	}
 	// prepare DSDB block (always 2 index)
 	blockDSDB := new(bytes.Buffer)
-	if err := writeBlockDSDB(blockDSDB, s.DSDBExtra, 2); err != nil {
+	if err := s.writeBlockDSDB(blockDSDB, 2); err != nil {
 		return err
 	}
 	// prepare Root block
-	blockList := writeBlockMapCreate()
+	blockList := s.writeFreeMapCreate()
 	blockRoot := new(bytes.Buffer)
-	if err := writeBlockRoot(blockRoot, make([]byte, 0), 0, 0, 0, blockList); err != nil {
+	if err := s.writeBlockRoot(blockRoot, 0, 0, 0, blockList); err != nil {
 		return err
 	}
 	// align blocks
-	if err := writeAlignBlock(blockData, 32); err != nil {
+	if err := s.writeAlignBlock(blockData, 32); err != nil {
 		return err
 	}
-	if err := writeAlignBlock(blockDSDB, 32); err != nil {
+	if err := s.writeAlignBlock(blockDSDB, 32); err != nil {
 		return err
 	}
-	if err := writeAlignBlock(blockRoot, 32); err != nil {
+	if err := s.writeAlignBlock(blockRoot, 32); err != nil {
 		return err
 	}
 	// create blocks map
-	blockDataOffset, blockList := writeBlockMapAlloc(blockList, uint32(blockData.Len()), 0)
-	blockDSDBOffset, blockList := writeBlockMapAlloc(blockList, uint32(blockDSDB.Len()), 0)
-	blockRootOffset, blockList := writeBlockMapAlloc(blockList, uint32(blockRoot.Len()), 0)
+	blockDataOffset, blockList := s.writeFreeMapAlloc(blockList, uint32(blockData.Len()), 0)
+	blockDSDBOffset, blockList := s.writeFreeMapAlloc(blockList, uint32(blockDSDB.Len()), 0)
+	blockRootOffset, blockList := s.writeFreeMapAlloc(blockList, uint32(blockRoot.Len()), 0)
 	// calc real offset
 	blockDataOffsetReal := blockOffset(blockDataOffset)
 	blockDSDBOffsetReal := blockOffset(blockDSDBOffset)
@@ -353,7 +370,7 @@ func (s *Store) Write(w io.Writer) error {
 	blockRootEnd := blockRootOffsetReal + blockSize(blockRootOffset)
 	// re-create root block with correct offsets
 	blockRoot.Reset()
-	if err := writeBlockRoot(blockRoot, s.RootExtra, blockRootOffset, blockDSDBOffset, blockDataOffset, blockList); err != nil {
+	if err := s.writeBlockRoot(blockRoot, blockRootOffset, blockDSDBOffset, blockDataOffset, blockList); err != nil {
 		return err
 	}
 	// write header

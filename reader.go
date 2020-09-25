@@ -13,7 +13,7 @@ import (
 	"golang.org/x/text/transform"
 )
 
-func readBlock(fileData []byte, offset, size uint32) *bytes.Buffer {
+func (s *Store) readBlock(fileData []byte, offset, size uint32) *bytes.Buffer {
 	// check size
 	if offset+4+size > uint32(len(fileData)) {
 		return nil
@@ -22,7 +22,7 @@ func readBlock(fileData []byte, offset, size uint32) *bytes.Buffer {
 	return bytes.NewBuffer(fileData[offset+4 : offset+4+size])
 }
 
-func readOffsets(b *bytes.Buffer) ([]uint32, error) {
+func (s *Store) readOffsets(b *bytes.Buffer) ([]uint32, error) {
 	var count uint32
 	if err := binary.Read(b, binary.BigEndian, &count); err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func readOffsets(b *bytes.Buffer) ([]uint32, error) {
 	return offsets, nil
 }
 
-func readTopics(b *bytes.Buffer) (map[string]uint32, error) {
+func (s *Store) readTopics(b *bytes.Buffer) (map[string]uint32, error) {
 	// read topic count
 	var count uint32
 	if err := binary.Read(b, binary.BigEndian, &count); err != nil {
@@ -80,7 +80,7 @@ func readTopics(b *bytes.Buffer) (map[string]uint32, error) {
 	return topics, nil
 }
 
-func readFreeBlocks(b *bytes.Buffer) error {
+func (s *Store) readFreeBlocks(b *bytes.Buffer) error {
 	for i := 0; i < 32; i++ {
 		var count uint32
 		if err := binary.Read(b, binary.BigEndian, &count); err != nil {
@@ -99,7 +99,7 @@ func readFreeBlocks(b *bytes.Buffer) error {
 	return nil
 }
 
-func readParseFile(b *bytes.Buffer) (Record, error) {
+func (s *Store) readParseFile(b *bytes.Buffer) (Record, error) {
 	r := Record{}
 	// len
 	var len uint32
@@ -170,7 +170,7 @@ func (s *Store) readParseData(fileData []byte, offsets []uint32, node uint32) er
 	}
 	// prepare data block
 	offset := offsets[node]
-	blockData := readBlock(fileData, blockOffset(offset), blockSize(offset))
+	blockData := s.readBlock(fileData, blockOffset(offset), blockSize(offset))
 	if blockData == nil {
 		return errors.New("invalid data block")
 	}
@@ -194,7 +194,7 @@ func (s *Store) readParseData(fileData []byte, offsets []uint32, node uint32) er
 				return err
 			}
 			// get the file for the current block
-			r, err := readParseFile(blockData)
+			r, err := s.readParseFile(blockData)
 			if err != nil {
 				return err
 			}
@@ -206,7 +206,7 @@ func (s *Store) readParseData(fileData []byte, offsets []uint32, node uint32) er
 		}
 	} else {
 		for i := 0; i < int(count); i++ {
-			r, err := readParseFile(blockData)
+			r, err := s.readParseFile(blockData)
 			if err != nil {
 				return err
 			}
@@ -224,41 +224,61 @@ func (s *Store) readParseDSDB(fileData []byte, offsets []uint32, topics map[stri
 	}
 	// find topic block
 	offset := offsets[node]
-	blockDSDB := readBlock(fileData, blockOffset(offset), blockSize(offset))
+	blockDSDB := s.readBlock(fileData, blockOffset(offset), blockSize(offset))
 	if blockDSDB == nil {
 		return errors.New("invalid DSDB block")
 	}
-	// read data node
-	var dataNode uint32
-	err := binary.Read(blockDSDB, binary.BigEndian, &dataNode)
+	// read data root node
+	var dataRoot uint32
+	err := binary.Read(blockDSDB, binary.BigEndian, &dataRoot)
 	if err != nil {
 		return err
+	}
+	// just reading
+	var levels uint32
+	if err = binary.Read(blockDSDB, binary.BigEndian, &levels); err != nil {
+		return err
+	}
+	var records uint32
+	if err = binary.Read(blockDSDB, binary.BigEndian, &records); err != nil {
+		return err
+	}
+	var nodes uint32
+	if err = binary.Read(blockDSDB, binary.BigEndian, &nodes); err != nil {
+		return err
+	}
+	var dummy uint32
+	if err = binary.Read(blockDSDB, binary.BigEndian, &dummy); err != nil {
+		return err
+	}
+	if dummy != 0x1000 {
+		return errors.New("invalid DSDB block")
 	}
 	// read extra
 	if s.DSDBExtra, err = ioutil.ReadAll(blockDSDB); err != nil {
 		return err
 	}
 	// parse data
-	return s.readParseData(fileData, offsets, dataNode)
+	return s.readParseData(fileData, offsets, dataRoot)
 }
 
 func (s *Store) readParseRoot(fileData []byte, offset, size uint32) error {
-	blockRoot := readBlock(fileData, offset, size)
+	blockRoot := s.readBlock(fileData, offset, size)
 	if blockRoot == nil {
 		return errors.New("invalid root block")
 	}
 	// read offsets
-	offsets, err := readOffsets(blockRoot)
+	offsets, err := s.readOffsets(blockRoot)
 	if err != nil {
 		return err
 	}
 	// read topics
-	topics, err := readTopics(blockRoot)
+	topics, err := s.readTopics(blockRoot)
 	if err != nil {
 		return err
 	}
 	// parse free blocks
-	if err = readFreeBlocks(blockRoot); err != nil {
+	if err = s.readFreeBlocks(blockRoot); err != nil {
 		return err
 	}
 	// read extra root data
@@ -321,7 +341,7 @@ func (s *Store) Read(r io.Reader) error {
 	if s.HeaderExtra, err = ioutil.ReadAll(blockHeader); err != nil {
 		return err
 	}
-	// parse root block
+	// parse root (bookkeeping) block
 	return s.readParseRoot(fileData, headerOffset1, headerSize)
 }
 

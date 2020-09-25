@@ -11,10 +11,10 @@ type Record struct {
 
 // Store of .DS_Store file
 type Store struct {
-	HeaderExtra []byte
-	RootExtra   []byte
-	DSDBExtra   []byte
-	Records     []Record
+	HeaderExtra []byte   // header extra data (unknown)
+	RootExtra   []byte   // root (bookkeeping) extra data (unknown)
+	DSDBExtra   []byte   // DSDB extra data (unknown)
+	Records     []Record // records
 }
 
 const headerMagic1 uint32 = 0x1
